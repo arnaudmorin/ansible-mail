@@ -109,13 +109,13 @@
 #
 - name: download rainloop artifact
   get_url:
-    url: https://www.rainloop.net/repository/webmail/rainloop-community-latest.zip
+    url: https://www.rainloop.net/repository/webmail/rainloop-latest.zip
     dest: /root/
   tags: rainloop
 
 - name: unzip rainloop artifact
   unarchive:
-    src: /root/rainloop-community-latest.zip
+    src: /root/rainloop-latest.zip
     dest: /var/www/{{server_name}}
     remote_src: yes
     owner: www-data
