@@ -137,8 +137,8 @@
     option: "{{item.option}}"
     value: "{{item.value}}"
   with_items:
-    - { section: "server", option: "daemon", value: "True" }
-    - { section: "server", option: "pid", value: "/var/run/radicale.pid" }
+    #- { section: "server", option: "daemon", value: "True" }
+    #- { section: "server", option: "pid", value: "/var/run/radicale.pid" }
     - { section: "auth", option: "type", value: "http_x_remote_user" }
   notify:
     - restart radicale
@@ -147,38 +147,39 @@
 #
 # InfCloud (web interface for caldav/carddav)
 #
-- name: download infcloud artifact
-  get_url:
-    url: https://www.inf-it.com/InfCloud_0.13.1.zip
-    dest: /root/
-  tags: infcloud
-
-- name: unzip infcloud artifact
-  unarchive:
-    src: /root/InfCloud_0.13.1.zip
-    dest: /var/www/{{server_name}}
-    remote_src: yes
-    owner: www-data
-    group: www-data
-  tags: infcloud
-
-- name: create a symbolic link cal/ to infcloud/
-  file:
-    src: /var/www/{{server_name}}/infcloud
-    dest: /var/www/{{server_name}}/cal
-    owner: www-data
-    group: www-data
-    state: link
-  tags: infcloud
-
-- name: configure infcloud
-  lineinfile:
-    path: /var/www/{{server_name}}/infcloud/config.js
-    regexp: "{{item.regexp}}"
-    line: "{{item.line}}"
-  loop:
-    - { regexp: "^		'/caldav.php/',$", line: "		'/radicale/'," }
-  tags: infcloud
+# NOTE(arnaud): disabled in 2025.10
+#- name: download infcloud artifact
+#  get_url:
+#    url: https://www.inf-it.com/InfCloud_0.13.1.zip
+#    dest: /root/
+#  tags: infcloud
+#
+#- name: unzip infcloud artifact
+#  unarchive:
+#    src: /root/InfCloud_0.13.1.zip
+#    dest: /var/www/{{server_name}}
+#    remote_src: yes
+#    owner: www-data
+#    group: www-data
+#  tags: infcloud
+#
+#- name: create a symbolic link cal/ to infcloud/
+#  file:
+#    src: /var/www/{{server_name}}/infcloud
+#    dest: /var/www/{{server_name}}/cal
+#    owner: www-data
+#    group: www-data
+#    state: link
+#  tags: infcloud
+#
+#- name: configure infcloud
+#  lineinfile:
+#    path: /var/www/{{server_name}}/infcloud/config.js
+#    regexp: "{{item.regexp}}"
+#    line: "{{item.line}}"
+#  loop:
+#    - { regexp: "^		'/caldav.php/',$", line: "		'/radicale/'," }
+#  tags: infcloud
 
 #
 # MariaDB
@@ -401,17 +402,60 @@
     regexp: "{{item.regexp}}"
     line: "{{item.line}}"
   loop:
-    - { path: "10-auth.conf", regexp: "^auth_mechanisms =", line: "auth_mechanisms = plain login" }
+    # We dont want auth-system
     - { path: "10-auth.conf", regexp: "auth-system.conf.ext", line: "#!include auth-system.conf.ext" }
+    # We want auth-sql
     - { path: "10-auth.conf", regexp: "auth-sql.conf.ext", line: "!include auth-sql.conf.ext" }
-    - { path: "10-mail.conf", regexp: "^mail_location =", line: "mail_location = maildir:~/Maildir" }
-    - { path: "10-mail.conf", regexp: "^#mail_plugins =", line: "mail_plugins = quota" }
-    - { path: "10-ssl.conf", regexp: "^ssl_cert =", line: "ssl_cert = </etc/letsencrypt/live/{{server_name}}/fullchain.pem" }
-    - { path: "10-ssl.conf", regexp: "^ssl_key =", line: "ssl_key = </etc/letsencrypt/live/{{server_name}}/privkey.pem" }
+
+    # We use maildir
+    - { path: "10-mail.conf", regexp: "^mail_driver =", line: "mail_driver = maildir" }
+    - { path: "10-mail.conf", regexp: "^mail_home =", line: "mail_home = /var/vmail/%{user | domain}/%{user | username}" }
+    - { path: "10-mail.conf", regexp: "^mail_path =", line: "mail_path = ~/Maildir" }
+    # The following line is not needed for maildir and need to be commented out
+    - { path: "10-mail.conf", regexp: "^mail_inbox_path =", line: "#mail_inbox_path = /var/mail/%{user}" }
+    # All our users are using the same uid/gid
+    - { path: "10-mail.conf", regexp: "^#mail_gid =", line: "mail_gid = 5000" }
+    - { path: "10-mail.conf", regexp: "^#mail_uid =", line: "mail_uid = 5000" }
+
+    # TODO rework the quota
+    #- { path: "10-mail.conf", regexp: "^#mail_plugins =", line: "mail_plugins = quota" }
+    #
+    - { path: "10-ssl.conf", regexp: "^ssl_server_cert_file =", line: "ssl_server_cert_file = /etc/letsencrypt/live/{{server_name}}/fullchain.pem" }
+    - { path: "10-ssl.conf", regexp: "^ssl_server_key_file =", line: "ssl_server_key_file = /etc/letsencrypt/live/{{server_name}}/privkey.pem" }
     - { path: "10-ssl.conf", regexp: "^ssl =", line: "ssl = required" }
+
+    # We use . as delimitter
     - { path: "15-lda.conf", regexp: "^#recipient_delimiter =", line: "recipient_delimiter = ." }
-    - { path: "90-sieve.conf", regexp: "^  #sieve_after =", line: "  sieve_after = /etc/dovecot/sieve-after" }
-    - { path: "20-imap.conf", regexp: "^  #mail_plugins =", line: "  mail_plugins = $mail_plugins imap_sieve" }
+    # NOTE(arnaud) TODO rework this since upgrade to trixie
+    #- { path: "90-sieve.conf", regexp: "^  #sieve_after =", line: "  sieve_after = /etc/dovecot/sieve-after" }
+    #- { path: "20-imap.conf", regexp: "^  #mail_plugins =", line: "  mail_plugins = $mail_plugins imap_sieve" }
+
+    # Remove debian specific config
+    - { path: "20-lmtp.conf", regexp: "^  auth_username_format = %{user | username}", line: "  #auth_username_format = %{user | username}" }
+
+  notify: restart dovecot
+  tags: dovecot
+
+- name: configure dovecot connection to mariadb
+  blockinfile:
+    path: /etc/dovecot/conf.d/auth-sql.conf.ext
+    block: |
+      sql_driver = mysql
+      mysql localhost {
+        user = mailserver
+        password = {{mariadb_mailserver_password}}
+        dbname = mailserver
+      }
+      passdb sql {
+        query = SELECT password FROM virtual_users WHERE email='%{user}'
+      }
+      userdb sql {
+        query = SELECT email as user FROM virtual_users WHERE email='%{user}'
+        iterate_query = SELECT email AS user FROM virtual_users
+      }
+    owner: root
+    group: root
+    mode: 0600
   notify: restart dovecot
   tags: dovecot
 
@@ -444,128 +488,114 @@
   notify: restart dovecot
   tags: dovecot
 
-- name: enable sieve plugin in dovecot
-  blockinfile:
-    path: /etc/dovecot/conf.d/20-lmtp.conf
-    insertafter: "protocol lmtp {"
-    block: |
-      mail_plugins = $mail_plugins sieve
-  notify: restart dovecot
-  tags: dovecot
+# NOTE(arnaud) TODO rework this since upgrade to trixie
+#- name: enable sieve plugin in dovecot
+#  blockinfile:
+#    path: /etc/dovecot/conf.d/20-lmtp.conf
+#    insertafter: "protocol lmtp {"
+#    block: |
+#      mail_plugins = $mail_plugins sieve
+#  notify: restart dovecot
+#  tags: dovecot
 
-- name: enable imapsieve plugins to learn from spam
-  blockinfile:
-    path: /etc/dovecot/conf.d/90-sieve.conf
-    insertafter: "plugin {"
-    block: |
-      # From elsewhere to Junk folder
-      imapsieve_mailbox1_name = Junk
-      imapsieve_mailbox1_causes = COPY
-      imapsieve_mailbox1_before = file:/etc/dovecot/sieve/learn-spam.sieve
-      # From Junk folder to elsewhere
-      imapsieve_mailbox2_name = *
-      imapsieve_mailbox2_from = Junk
-      imapsieve_mailbox2_causes = COPY
-      imapsieve_mailbox2_before = file:/etc/dovecot/sieve/learn-ham.sieve
-      sieve_pipe_bin_dir = /etc/dovecot/sieve
-      sieve_global_extensions = +vnd.dovecot.pipe
-      sieve_plugins = sieve_imapsieve sieve_extprograms
-  notify: restart dovecot
-  tags: dovecot
+# NOTE(arnaud) TODO rework this since upgrade to trixie
+#- name: enable imapsieve plugins to learn from spam
+#  blockinfile:
+#    path: /etc/dovecot/conf.d/90-sieve.conf
+#    insertafter: "plugin {"
+#    block: |
+#      # From elsewhere to Junk folder
+#      imapsieve_mailbox1_name = Junk
+#      imapsieve_mailbox1_causes = COPY
+#      imapsieve_mailbox1_before = file:/etc/dovecot/sieve/learn-spam.sieve
+#      # From Junk folder to elsewhere
+#      imapsieve_mailbox2_name = *
+#      imapsieve_mailbox2_from = Junk
+#      imapsieve_mailbox2_causes = COPY
+#      imapsieve_mailbox2_before = file:/etc/dovecot/sieve/learn-ham.sieve
+#      sieve_pipe_bin_dir = /etc/dovecot/sieve
+#      sieve_global_extensions = +vnd.dovecot.pipe
+#      sieve_plugins = sieve_imapsieve sieve_extprograms
+#  notify: restart dovecot
+#  tags: dovecot
 
-- name: creates sieve folders
-  copy:
-    src: ./config/dovecot/{{item}}
-    dest: /etc/dovecot/
-    mode: 0700
-    owner: vmail
-    group: vmail
-  loop:
-    - sieve
-    - sieve-after
-  register: result
-  tags: dovecot
+# NOTE(arnaud) TODO rework this since upgrade to trixie
+#- name: creates sieve folders
+#  copy:
+#    src: ./config/dovecot/{{item}}
+#    dest: /etc/dovecot/
+#    mode: 0700
+#    owner: vmail
+#    group: vmail
+#  loop:
+#    - sieve
+#    - sieve-after
+#  register: result
+#  tags: dovecot
+#
+#- name: temporary restart dovecot to compile sieve scripts
+#  when: result.changed
+#  service:
+#    name: dovecot
+#    state: restarted
+#  tags: dovecot
+#
+#- name: compile sieve scripts
+#  when: result.changed
+#  shell:
+#    cmd: find /etc/dovecot/ -name '*.sieve' -exec sievec {} \;
+#  notify: restart dovecot
+#  tags: dovecot
+#
+#- name: set correct mode for compiled sieve scripts
+#  when: result.changed
+#  shell:
+#    cmd: find /etc/dovecot/ -name '*.svbin' -exec chown vmail:vmail {} \;
+#  notify: restart dovecot
+#  tags: dovecot
 
-- name: temporary restart dovecot to compile sieve scripts
-  when: result.changed
-  service:
-    name: dovecot
-    state: restarted
-  tags: dovecot
 
-- name: compile sieve scripts
-  when: result.changed
-  shell:
-    cmd: find /etc/dovecot/ -name '*.sieve' -exec sievec {} \;
-  notify: restart dovecot
-  tags: dovecot
-
-- name: set correct mode for compiled sieve scripts
-  when: result.changed
-  shell:
-    cmd: find /etc/dovecot/ -name '*.svbin' -exec chown vmail:vmail {} \;
-  notify: restart dovecot
-  tags: dovecot
-
-- name: configure dovecot quotas plugin
-  blockinfile:
-    path: /etc/dovecot/conf.d/90-quota.conf
-    block: |
-      plugin {
-        quota = maildir:User quota
-
-        quota_status_success = DUNNO
-        quota_status_nouser = DUNNO
-        quota_status_overquota = "452 4.2.2 Mailbox is full and cannot receive any more emails"
-      }
-      service quota-status {
-        executable = /usr/lib/dovecot/quota-status -p postfix
-        unix_listener /var/spool/postfix/private/quota-status {
-          user = postfix
-        }
-      }
-      plugin {
-         quota_warning = storage=95%% quota-warning 95 %u
-         quota_warning2 = storage=80%% quota-warning 80 %u
-         quota_warning3 = -storage=100%% quota-warning below %u
-      }
-      service quota-warning {
-         executable = script /usr/local/bin/quota-warning.sh
-         unix_listener quota-warning {
-           group = dovecot
-           mode = 0660
-         }
-       }
-  notify: restart dovecot
-  tags: dovecot
-
-- name: create quota-warning.sh script
-  template:
-    src: ./config/dovecot/quota-warning.sh
-    dest: /usr/local/bin/
-    owner: root
-    group: root
-    mode: 0755
-  tags: dovecot
-
-- name: configure dovecot connection to mariadb
-  blockinfile:
-    path: /etc/dovecot/dovecot-sql.conf.ext
-    block: |
-      driver = mysql
-      connect = host=127.0.0.1 dbname=mailserver user=mailserver password={{mariadb_mailserver_password}}
-      user_query = SELECT email as user, \
-        concat('*:bytes=', quota) AS quota_rule, \
-        '/var/vmail/%d/%n' AS home, \
-        5000 AS uid, 5000 AS gid \
-        FROM virtual_users WHERE email='%u'
-      password_query = SELECT password FROM virtual_users WHERE email='%u'
-      iterate_query = SELECT email AS user FROM virtual_users
-    owner: root
-    group: root
-    mode: 0600
-  notify: restart dovecot
-  tags: dovecot
+# NOTE(arnaud) TODO rework this since upgrade to trixie
+#- name: configure dovecot quotas plugin
+#  blockinfile:
+#    path: /etc/dovecot/conf.d/90-quota.conf
+#    block: |
+#      plugin {
+#        quota = maildir:User quota
+#
+#        quota_status_success = DUNNO
+#        quota_status_nouser = DUNNO
+#        quota_status_overquota = "452 4.2.2 Mailbox is full and cannot receive any more emails"
+#      }
+#      service quota-status {
+#        executable = /usr/lib/dovecot/quota-status -p postfix
+#        unix_listener /var/spool/postfix/private/quota-status {
+#          user = postfix
+#        }
+#      }
+#      plugin {
+#         quota_warning = storage=95%% quota-warning 95 %u
+#         quota_warning2 = storage=80%% quota-warning 80 %u
+#         quota_warning3 = -storage=100%% quota-warning below %u
+#      }
+#      service quota-warning {
+#         executable = script /usr/local/bin/quota-warning.sh
+#         unix_listener quota-warning {
+#           group = dovecot
+#           mode = 0660
+#         }
+#       }
+#  notify: restart dovecot
+#  tags: dovecot
+#
+#- name: create quota-warning.sh script
+#  template:
+#    src: ./config/dovecot/quota-warning.sh
+#    dest: /usr/local/bin/
+#    owner: root
+#    group: root
+#    mode: 0755
+#  tags: dovecot
 
 - name: configure fail2ban for dovecot
   blockinfile:
@@ -605,18 +635,18 @@
     - restart rspamd
   tags: rspamd
 
-- name: download d3 artifact (to fix rspamd debian bug 918027)
-  get_url:
-    url: https://github.com/d3/d3/releases/download/v5.15.0/d3.zip
-    dest: /root/
-  tags: rspamd
-
-- name: unzip d3 artifact
-  unarchive:
-    src: /root/d3.zip
-    dest: /usr/share/rspamd/www/js/lib
-    remote_src: yes
-  tags: rspamd
+#- name: download d3 artifact (to fix rspamd debian bug 918027)
+#  get_url:
+#    url: https://github.com/d3/d3/releases/download/v5.15.0/d3.zip
+#    dest: /root/
+#  tags: rspamd
+#
+#- name: unzip d3 artifact
+#  unarchive:
+#    src: /root/d3.zip
+#    dest: /usr/share/rspamd/www/js/lib
+#    remote_src: yes
+#  tags: rspamd
 
 # DKIM is done through RSPAMD because this is simpler than opendkim
 - name: create dkim dir

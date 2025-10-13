@@ -91,7 +91,7 @@ smtpd_relay_restrictions =
 # Check user quota before trying to deliver mail
 smtpd_recipient_restrictions =
   reject_unauth_destination,
-  check_policy_service unix:private/quota-status,
+#  check_policy_service unix:private/quota-status,
 
 # Restrictions for all sending foreign servers ("SMTP clients")
 smtpd_client_restrictions =
