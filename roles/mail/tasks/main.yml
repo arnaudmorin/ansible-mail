@@ -29,10 +29,35 @@
     - restart apache2
   tags: apache2
 
+- name: disable apache2 useless modules
+  apache2_module:
+    state: absent
+    name: "{{item}}"
+  loop:
+    - status
+  notify:
+    - restart apache2
+  tags: apache2
+
 - name: creates apache2 folder
   file:
     path: /var/www/{{server_name}}
     state: directory
+  tags: apache2
+
+- name: creates apache2 autoconfig folder
+  file:
+    path: /var/www/autoconfig/mail
+    state: directory
+  tags: apache2
+
+- name: add autoconfig file
+  template:
+    src: ./config/apache2/config-v1.1.xml
+    dest: /var/www/autoconfig/mail/config-v1.1.xml
+    owner: www-data
+    group: www-data
+    mode: 0600
   tags: apache2
 
 - name: disable default vhosts
@@ -51,6 +76,7 @@
   loop:
     - { src: "server.conf", dest: "{{server_name}}.conf" }
     - { src: "server-ssl.conf", dest: "{{server_name}}-ssl.conf" }
+    - { src: "autoconfig.conf", dest: "autoconfig.{{autoconfig}}.conf" }
   notify:
     - restart apache2
   tags: apache2
@@ -59,6 +85,14 @@
   command:
     cmd: a2ensite {{ server_name }}
     creates: /etc/apache2/sites-enabled/{{ server_name }}.conf
+  notify:
+    - restart apache2
+  tags: apache2
+
+- name: enable apache2 autoconfig vhost port 80
+  command:
+    cmd: a2ensite autoconfig.{{ autoconfig }}
+    creates: /etc/apache2/sites-enabled/autoconfig.{{ autoconfig }}.conf
   notify:
     - restart apache2
   tags: apache2
@@ -88,6 +122,12 @@
   shell:
     cmd: certbot certonly -n --agree-tos --email {{certbot_mail}} --standalone --webroot-path /var/www/{{server_name}} -d {{server_name}}
     creates: /etc/letsencrypt/live/{{server_name}}/fullchain.pem
+  tags: apache2
+
+- name: grab letsencrypt certificate for autoconfig
+  shell:
+    cmd: certbot certonly -n --agree-tos --email {{certbot_mail}} --standalone --webroot-path /var/www/autoconfig -d autoconfig.{{autoconfig}}
+    creates: /etc/letsencrypt/live/autoconfig.{{autoconfig}}/fullchain.pem
   tags: apache2
 
 - name: grab letsencrypt certificate for extra vhosts
