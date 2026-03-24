@@ -59,19 +59,42 @@
   command:
     cmd: a2ensite {{ server_name }}
     creates: /etc/apache2/sites-enabled/{{ server_name }}.conf
-  register: result
+  notify:
+    - restart apache2
   tags: apache2
 
-- name: reload apache2
+- name: creates apache2 extra vhosts
+  template:
+    src: ./config/apache2/extra_vhost.conf
+    dest: /etc/apache2/sites-available/{{item}}.conf
+    owner: root
+    group: root
+    mode: 0644
+  loop: "{{ apache_extra_vhosts }}"
+  notify:
+    - restart apache2
+  tags: apache2
+
+- name: enable apache2 extra vhosts port 80
   command:
-    cmd: systemctl reload apache2
-  when: result.changed
+    cmd: a2ensite {{ item }}
+    creates: /etc/apache2/sites-enabled/{{ item }}.conf
+  loop: "{{ apache_extra_vhosts }}"
+  notify:
+    - restart apache2
   tags: apache2
 
 - name: grab letsencrypt certificate
   shell:
-    cmd: certbot certonly -n --agree-tos --email {{certbot_mail}} --webroot --webroot-path /var/www/{{server_name}} -d {{server_name}}
+    cmd: certbot certonly -n --agree-tos --email {{certbot_mail}} --standalone --webroot-path /var/www/{{server_name}} -d {{server_name}}
     creates: /etc/letsencrypt/live/{{server_name}}/fullchain.pem
+  tags: apache2
+
+- name: grab letsencrypt certificate for extra vhosts
+  shell:
+    cmd: certbot certonly -n --agree-tos --email {{certbot_mail}} --standalone --webroot-path /var/www/{{server_name}} -d {{item}}
+    creates: /etc/letsencrypt/live/{{item}}/fullchain.pem
+  loop: "{{ apache_extra_vhosts }}"
   tags: apache2
 
 - name: create letsencrypt hooks
